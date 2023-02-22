@@ -82,6 +82,7 @@ class Project(BaseModel):
     slug: str = ""
     platform: Optional[str]
     teams: list[Team] = []
+    keys: list[Key] = []
 
     @root_validator
     def slugify(  # pylint: disable=no-self-argument
@@ -127,3 +128,8 @@ class Organization(BaseModel):
 
     def __hash__(self) -> int:
         return hash(self.name)
+
+
+class Key(BaseModel):
+    dsn: str
+    security_endpoint: str

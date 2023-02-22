@@ -24,5 +24,8 @@ query Projects {
         name
       }
     }
+    namespaces {
+      name
+    }
   }
 }
