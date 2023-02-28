@@ -26,6 +26,14 @@ query Projects {
     }
     namespaces {
       name
+      cluster {
+        name
+        serverUrl
+        insecureSkipTLSVerify
+        jumpHost {
+          ...CommonJumphostFields
+        }
+      }
     }
   }
 }

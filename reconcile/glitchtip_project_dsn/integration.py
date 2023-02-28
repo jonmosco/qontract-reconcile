@@ -45,76 +45,44 @@ from reconcile.utils.secret_reader import create_secret_reader
 QONTRACT_INTEGRATION = "glitchtip_project_dsn"
 
 
-def filter_users(users: Iterable[User], ignore_users: Iterable[str]) -> list[User]:
-    return [user for user in users if user.email not in ignore_users]
-
-
-def get_user_role(organization: Organization, roles: RoleV1) -> str:
-    for role in roles.glitchtip_roles or []:
-        if role.organization.name == organization.name:
-            return role.role
-    # this can not be reached due to GQL but makes mypy happy
-    return "member"
-
-
 class GlitchtipException(Exception):
     pass
 
-
-def fetch_current_state(
-    glitchtip_client: GlitchtipClient, ignore_users: Iterable[str]
-) -> list[Organization]:
-    organizations = glitchtip_client.organizations()
-    for organization in organizations:
-        organization.projects = glitchtip_client.projects(
-            organization_slug=organization.slug
+# all existing secrets from all namespaces that has the DSN
+# add the secrets into the resource inventory which will be the current state
+# resource inventory will be the object (what is in the cluster)
+# fetching the DSNs
+# Use an OC map on all the clusters
+# return a relation of project and keys from the clusters
+def fetch_current_dsn(
+    glitchtip_client: GlitchtipClient, glitchtip_projects: Iterable[GlitchtipProjectsV1]
+) -> list[[project_dsn]:
+    projects_dsn = dict() 
+    for project in glitchtip_projects:
+        projects_dsn[f"{slugify(project.organization.name)-slugify(project.name)}"] = glitchtip_client.project_keys(
+            organization_slug=slugify(project.organizatoin.name), project_slug=slugify(project.name)
         )
-        for project in organization.projects:
-            project.keys = glitchtip_client.project_keys(
-                organization_slug=organization.slug, project_slug=project.slug
-            )
 
-    return organizations
+    ocm_map = OCMMap(
+            clusters=clusters,
+            integration=QONTRACT_INTEGRATION,
+            settings=settings,
+            init_addons=True,
+        )
+
+    return project_dsn
 
 
+# input will be the resource inventory object
+# what should be in the cluster
 def fetch_desired_state(
     glitchtip_projects: Sequence[GlitchtipProjectsV1], mail_domain: str
 ) -> list[Organization]:
-    organizations: dict[str, Organization] = {}
-    for glitchtip_project in glitchtip_projects:
-        organization = organizations.setdefault(
-            glitchtip_project.organization.name,
-            Organization(name=glitchtip_project.organization.name),
-        )
-        project = Project(
-            name=glitchtip_project.name, platform=glitchtip_project.platform
-        )
-        # Check project is unique within an organization
-        if project.name in [p.name for p in organization.projects]:
-            raise GlitchtipException(f'project name "{project.name}" already in use!')
-        for glitchtip_team in glitchtip_project.teams:
-            users: list[User] = []
-            for role in glitchtip_team.roles:
-                for role_user in role.users:
-                    users.append(
-                        User(
-                            email=f"{role_user.org_username}@{mail_domain}",
-                            role=get_user_role(organization, role),
-                        )
-                    )
-
-            team = Team(name=glitchtip_team.name, users=users)
-            project.teams.append(team)
-            if team not in organization.teams:
-                organization.teams.append(team)
-
-            for user in team.users:
-                if user not in organization.users:
-                    organization.users.append(user)
-        organization.projects.append(project)
-    return list(organizations.values())
+    # need to have as input: graphql query of projects in a namespace
+    # merge together 
 
 
+# create the secret object
 def run(dry_run: bool, instance: Optional[str] = None) -> None:
     gqlapi = gql.get_api()
     secret_reader = SecretReader(queries.get_secret_reader_settings())
@@ -131,6 +99,7 @@ def run(dry_run: bool, instance: Optional[str] = None) -> None:
     glitchtip_projects = (
         glitchtip_project_query(query_func=gqlapi.query).glitchtip_projects or []
     )
+    # iterate over projects and fetch the DSN.  Create project:key relationship
 
     for glitchtip_instance in glitchtip_instances:
         if instance and glitchtip_instance.name != instance:
@@ -142,11 +111,3 @@ def run(dry_run: bool, instance: Optional[str] = None) -> None:
             read_timeout=read_timeout,
             max_retries=max_retries,
         )
-
-
-def early_exit_desired_state(*args: Any, **kwargs: Any) -> dict[str, Any]:
-    gqlapi = gql.get_api()
-    return {
-        "projects": gqlapi.query(GLITCHTIP_PROJECT_DEFINITION)["glitchtip_projects"],
-        "instances": gqlapi.query(GLITCHTIP_INSTANCE_DEFINITION)["instances"],
-    }
