@@ -8,6 +8,7 @@ from urllib.parse import urljoin
 import requests
 
 from reconcile.utils.glitchtip.models import (
+    Key,
     Organization,
     Project,
     Team,
@@ -131,6 +132,15 @@ class GlitchtipClient:
         return [
             Project(**r)
             for r in self._list(f"/api/0/organizations/{organization_slug}/projects/")
+        ]
+
+    def project_keys(self, organization_slug: str, project_slug: str) -> list[Key]:
+        """List project keys (DSN)."""
+        return [
+            Key(dsn=r["dsn"]["public"], security_endpoint=r["dsn"]["security"])
+            for r in self._list(
+                f"/api/0/projects/{organization_slug}/{project_slug}/keys/"
+            )
         ]
 
     def create_project(
